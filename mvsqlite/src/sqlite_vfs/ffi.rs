@@ -711,6 +711,7 @@ pub struct sqlite3_vfs {
     >,
 }
 
+#[allow(clashing_extern_declarations)]
 extern "C" {
     pub fn sqlite3_vfs_register(
         arg1: *mut sqlite3_vfs,
