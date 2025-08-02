@@ -438,9 +438,8 @@ impl Connection {
 
         let fast_write_size = self.write_buffer.len();
         
-        // Capture stats before commit (txn will be consumed)
+        // Capture read count before commit (txn will be consumed)
         let read_count = txn.read_set_size();
-        let write_count = txn.written_pages().len() + self.write_buffer.len();
         
         let result = txn.commit(None, &self.write_buffer).await;
         self.write_buffer.clear();
@@ -448,7 +447,8 @@ impl Connection {
         let result = result.expect("transaction commit failed");
         match result {
             CommitOutput::Committed(result) => {
-                // Store stats for successful commit
+                // Use the actual committed page count from the server
+                let write_count = result.num_pages as usize;
                 self.last_transaction_stats = Some((read_count, write_count));
                 self.last_known_write_version = Some(result.version.clone());
                 let changelog = result.changelog.get(ns_key);
