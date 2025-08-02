@@ -449,7 +449,6 @@ impl Connection {
             CommitOutput::Committed(result) => {
                 // Use the actual committed page count from the server
                 let write_count = result.num_pages as usize;
-                tracing::debug!("Commit successful: setting stats to ({}, {})", read_count, write_count);
                 self.last_transaction_stats = Some((read_count, write_count));
                 self.last_known_write_version = Some(result.version.clone());
                 let changelog = result.changelog.get(ns_key);
@@ -494,7 +493,7 @@ impl Connection {
                 false
             }
             CommitOutput::Empty => {
-                tracing::debug!("Empty commit: setting stats to ({}, 0)", read_count);
+                tracing::info!("transaction is empty");
                 
                 // Store stats for empty commit (reads but no writes)
                 self.last_transaction_stats = Some((read_count, 0));
@@ -719,13 +718,22 @@ impl Connection {
         };
 
         if lock == LockKind::None {
-            // All locks dropped - always capture current transaction stats
+            // All locks dropped - preserve commit stats or capture read-only stats
             if let Some(ref txn) = self.txn {
                 let read_count = txn.read_set_size();
                 let write_count = txn.written_pages().len() + self.write_buffer.len();
-                tracing::debug!("Unlock: capturing stats ({}, {}) - overwriting previous: {:?}", 
-                              read_count, write_count, self.last_transaction_stats);
-                self.last_transaction_stats = Some((read_count, write_count));
+                
+                // Check if this transaction did any meaningful work
+                let has_work = read_count > 0 || write_count > 0;
+                
+                if self.last_transaction_stats.is_some() && has_work && write_count == 0 {
+                    // We have previous commit stats AND this is a read-only transaction with reads
+                    self.last_transaction_stats = Some((read_count, 0));
+                } else if self.last_transaction_stats.is_none() && has_work {
+                    // No previous stats AND this transaction did work - capture it
+                    self.last_transaction_stats = Some((read_count, write_count));
+                }
+                // Otherwise: preserve existing commit stats (common case after INSERT/UPDATE/DELETE)
             }
             self.txn = None;
             self.history.prev_index = 0;
