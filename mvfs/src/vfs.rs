@@ -135,6 +135,7 @@ impl MultiVersionVfs {
             write_buffer: HashMap::new(),
             virtual_version_counter: 0,
             last_known_write_version: None,
+            last_transaction_stats: None,
         };
         Ok(conn)
     }
@@ -161,6 +162,9 @@ pub struct Connection {
     virtual_version_counter: u32,
 
     last_known_write_version: Option<String>,
+    
+    // Store stats from the last completed transaction
+    last_transaction_stats: Option<(usize, usize)>,
 }
 
 #[derive(Default)]
@@ -433,6 +437,13 @@ impl Connection {
         }
 
         let fast_write_size = self.write_buffer.len();
+        
+        // Capture stats before commit clears everything
+        self.last_transaction_stats = Some((
+            txn.read_set_size(),
+            txn.written_pages().len() + self.write_buffer.len()
+        ));
+        
         let result = txn.commit(None, &self.write_buffer).await;
         self.write_buffer.clear();
 
@@ -724,13 +735,10 @@ impl Connection {
         self.lock
     }
 
-    /// Get page read/write statistics from the current transaction.
-    /// Returns Some((pages_read, pages_written)) if a transaction is active,
-    /// or None if no transaction is currently active.
+    /// Get page read/write statistics from the last completed transaction.
+    /// Returns Some((pages_read, pages_written)) if stats are available,
+    /// or None if no transaction has completed yet.
     pub fn page_stats(&self) -> Option<(usize, usize)> {
-        self.txn.as_ref().map(|txn| (
-            txn.read_set_size(),
-            txn.written_pages().len() + self.write_buffer.len()
-        ))
+        self.last_transaction_stats
     }
 }

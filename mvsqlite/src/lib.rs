@@ -403,24 +403,24 @@ pub unsafe extern "C" fn mvsqlite_autocommit_backoff(db: *mut sqlite_c::sqlite3)
     });
 }
 
-/// Get page read/write statistics from the current transaction.
+/// Get page read/write statistics from the last completed transaction.
 /// 
-/// This function provides access to page I/O statistics for the current 
-/// transaction on the specified database connection.
+/// This function provides access to page I/O statistics for the most recently 
+/// completed transaction on the specified database connection.
 /// 
 /// Notes:
 /// - Read tracking is automatically enabled for mvsqlite transactions
 /// - Write counting includes both flushed and pending pages
-/// - Call this immediately after `execute()` while the transaction is still active
-/// - Stats are reset when a new transaction begins (after commit/rollback)
+/// - Call this after `execute()` completes - stats are captured during commit
+/// - Stats persist until the next transaction completes
 /// 
 /// # Arguments
 /// * `db` - Raw SQLite database handle (from rusqlite's Connection::handle())
 /// * `db_name` - Database name (typically "main" for the primary database)
 /// 
 /// # Returns
-/// `Ok((pages_read, pages_written))` if a transaction is active and stats are available,
-/// or `Err(msg)` if no transaction is active or stats are unavailable.
+/// `Ok((pages_read, pages_written))` if stats from a completed transaction are available,
+/// or `Err(msg)` if no transaction has completed yet.
 /// 
 /// # Safety
 /// This function is unsafe because it requires a valid SQLite database handle.
@@ -437,7 +437,7 @@ pub unsafe extern "C" fn mvsqlite_autocommit_backoff(db: *mut sqlite_c::sqlite3)
 ///     mvsqlite::get_page_stats_from_handle(
 ///         conn.handle() as *mut std::os::raw::c_void, 
 ///         "main"
-///     ).expect("No transaction active - call this immediately after execute()")
+///     ).expect("No completed transaction - stats not available yet")
 /// };
 /// println!("Read {} pages, wrote {} pages", reads, writes);
 /// ```
@@ -448,5 +448,5 @@ pub unsafe fn get_page_stats_from_handle(
     let db = db as *mut sqlite_c::sqlite3;
     let conn_guard = get_conn(db, db_name);
     conn_guard.page_stats()
-        .ok_or("No active transaction - page statistics not available")
+        .ok_or("No completed transaction - page statistics not available yet")
 }
