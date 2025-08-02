@@ -728,8 +728,9 @@ impl Connection {
     /// Returns Some((pages_read, pages_written)) if a transaction is active,
     /// or None if no transaction is currently active.
     pub fn page_stats(&self) -> Option<(usize, usize)> {
-        self.txn.as_ref().map(|txn| {
-            (txn.read_set_size(), txn.written_pages().len())
-        })
+        self.txn.as_ref().map(|txn| (
+            txn.read_set_size(),
+            txn.written_pages().len() + self.write_buffer.len()
+        ))
     }
 }

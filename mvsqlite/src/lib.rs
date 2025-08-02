@@ -408,6 +408,12 @@ pub unsafe extern "C" fn mvsqlite_autocommit_backoff(db: *mut sqlite_c::sqlite3)
 /// This function provides access to page I/O statistics for the current 
 /// transaction on the specified database connection.
 /// 
+/// Notes:
+/// - Read tracking is automatically enabled for mvsqlite transactions
+/// - Write counting includes both flushed and pending pages
+/// - Call this immediately after `execute()` while the transaction is still active
+/// - Stats are reset when a new transaction begins (after commit/rollback)
+/// 
 /// # Arguments
 /// * `db` - Raw SQLite database handle (from rusqlite's Connection::handle())
 /// * `db_name` - Database name (typically "main" for the primary database)
