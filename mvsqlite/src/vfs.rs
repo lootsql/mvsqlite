@@ -138,6 +138,15 @@ impl DatabaseHandle for Connection {
     }
 }
 
+impl Connection {
+    /// Get page read/write statistics from the current transaction.
+    /// Returns Some((pages_read, pages_written)) if a transaction is active,
+    /// or None if no transaction is currently active.
+    pub fn page_stats(&self) -> Option<(usize, usize)> {
+        self.inner.page_stats()
+    }
+}
+
 impl<W: WalIndex + 'static> DatabaseHandle for Box<dyn DatabaseHandle<WalIndex = W>> {
     type WalIndex = W;
 
