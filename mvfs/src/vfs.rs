@@ -438,11 +438,9 @@ impl Connection {
 
         let fast_write_size = self.write_buffer.len();
         
-        // Capture stats before commit clears everything
-        self.last_transaction_stats = Some((
-            txn.read_set_size(),
-            txn.written_pages().len() + self.write_buffer.len()
-        ));
+        // Capture stats before commit (txn will be consumed)
+        let read_count = txn.read_set_size();
+        let write_count = txn.written_pages().len() + self.write_buffer.len();
         
         let result = txn.commit(None, &self.write_buffer).await;
         self.write_buffer.clear();
@@ -450,6 +448,8 @@ impl Connection {
         let result = result.expect("transaction commit failed");
         match result {
             CommitOutput::Committed(result) => {
+                // Store stats for successful commit
+                self.last_transaction_stats = Some((read_count, write_count));
                 self.last_known_write_version = Some(result.version.clone());
                 let changelog = result.changelog.get(ns_key);
 
@@ -494,6 +494,10 @@ impl Connection {
             }
             CommitOutput::Empty => {
                 tracing::info!("transaction is empty");
+                
+                // Store stats for empty commit (reads but no writes)
+                self.last_transaction_stats = Some((read_count, 0));
+                
                 self.txn = Some(self.client.create_transaction_at_version(
                     self.dp.as_ref(),
                     &read_version,
@@ -617,6 +621,8 @@ impl Connection {
         }
 
         if self.txn.is_none() {
+            // Starting a new transaction - reset stats
+            self.last_transaction_stats = None;
             let mut interval: Option<Vec<u32>> = None;
 
             let txn_info = if let Some(version) = &self.fixed_version {
@@ -714,7 +720,16 @@ impl Connection {
         };
 
         if lock == LockKind::None {
-            // All locks dropped
+            // All locks dropped - capture stats for read-only transactions
+            if let Some(ref txn) = self.txn {
+                // Only capture if we haven't already captured during commit
+                if self.last_transaction_stats.is_none() {
+                    self.last_transaction_stats = Some((
+                        txn.read_set_size(),
+                        txn.written_pages().len() + self.write_buffer.len()
+                    ));
+                }
+            }
             self.txn = None;
             self.history.prev_index = 0;
         }

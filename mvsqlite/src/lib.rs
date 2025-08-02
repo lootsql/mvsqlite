@@ -411,7 +411,8 @@ pub unsafe extern "C" fn mvsqlite_autocommit_backoff(db: *mut sqlite_c::sqlite3)
 /// Notes:
 /// - Read tracking is automatically enabled for mvsqlite transactions
 /// - Write counting includes both flushed and pending pages
-/// - Call this after `execute()` completes - stats are captured during commit
+/// - Stats are captured when each transaction ends (both reads and writes)
+/// - SELECTs return (pages_read, 0) while INSERTs/UPDATEs return (pages_read, pages_written)
 /// - Stats persist until the next transaction completes
 /// 
 /// # Arguments
@@ -434,6 +435,7 @@ pub unsafe extern "C" fn mvsqlite_autocommit_backoff(db: *mut sqlite_c::sqlite3)
 /// conn.execute("INSERT INTO users (name) VALUES (?)", ["Alice"])?;
 /// 
 /// let (reads, writes) = unsafe {
+
 ///     mvsqlite::get_page_stats_from_handle(
 ///         conn.handle() as *mut std::os::raw::c_void, 
 ///         "main"
@@ -450,3 +452,4 @@ pub unsafe fn get_page_stats_from_handle(
     conn_guard.page_stats()
         .ok_or("No completed transaction - page statistics not available yet")
 }
+
