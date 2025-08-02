@@ -449,6 +449,7 @@ impl Connection {
             CommitOutput::Committed(result) => {
                 // Use the actual committed page count from the server
                 let write_count = result.num_pages as usize;
+                tracing::debug!("Commit successful: setting stats to ({}, {})", read_count, write_count);
                 self.last_transaction_stats = Some((read_count, write_count));
                 self.last_known_write_version = Some(result.version.clone());
                 let changelog = result.changelog.get(ns_key);
@@ -493,7 +494,7 @@ impl Connection {
                 false
             }
             CommitOutput::Empty => {
-                tracing::info!("transaction is empty");
+                tracing::debug!("Empty commit: setting stats to ({}, 0)", read_count);
                 
                 // Store stats for empty commit (reads but no writes)
                 self.last_transaction_stats = Some((read_count, 0));
@@ -621,8 +622,6 @@ impl Connection {
         }
 
         if self.txn.is_none() {
-            // Starting a new transaction - reset stats
-            self.last_transaction_stats = None;
             let mut interval: Option<Vec<u32>> = None;
 
             let txn_info = if let Some(version) = &self.fixed_version {
@@ -720,15 +719,13 @@ impl Connection {
         };
 
         if lock == LockKind::None {
-            // All locks dropped - capture stats for read-only transactions
+            // All locks dropped - always capture current transaction stats
             if let Some(ref txn) = self.txn {
-                // Only capture if we haven't already captured during commit
-                if self.last_transaction_stats.is_none() {
-                    self.last_transaction_stats = Some((
-                        txn.read_set_size(),
-                        txn.written_pages().len() + self.write_buffer.len()
-                    ));
-                }
+                let read_count = txn.read_set_size();
+                let write_count = txn.written_pages().len() + self.write_buffer.len();
+                tracing::debug!("Unlock: capturing stats ({}, {}) - overwriting previous: {:?}", 
+                              read_count, write_count, self.last_transaction_stats);
+                self.last_transaction_stats = Some((read_count, write_count));
             }
             self.txn = None;
             self.history.prev_index = 0;
