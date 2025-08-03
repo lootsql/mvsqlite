@@ -135,7 +135,7 @@ impl MultiVersionVfs {
             write_buffer: HashMap::new(),
             virtual_version_counter: 0,
             last_known_write_version: None,
-            last_transaction_stats: None,
+            page_stats: (0, 0),
         };
         Ok(conn)
     }
@@ -163,8 +163,8 @@ pub struct Connection {
 
     last_known_write_version: Option<String>,
     
-    // Store stats from the last completed transaction
-    last_transaction_stats: Option<(usize, usize)>,
+    // (pages_read, pages_written) on the connection
+    page_stats: (usize, usize),
 }
 
 #[derive(Default)]
@@ -447,9 +447,10 @@ impl Connection {
         let result = result.expect("transaction commit failed");
         match result {
             CommitOutput::Committed(result) => {
-                // Use the actual committed page count from the server
                 let write_count = result.num_pages as usize;
-                self.last_transaction_stats = Some((read_count, write_count));
+                self.page_stats.0 += read_count;
+                self.page_stats.1 += write_count;
+
                 self.last_known_write_version = Some(result.version.clone());
                 let changelog = result.changelog.get(ns_key);
 
@@ -494,9 +495,8 @@ impl Connection {
             }
             CommitOutput::Empty => {
                 tracing::info!("transaction is empty");
-                
-                // Store stats for empty commit (reads but no writes)
-                self.last_transaction_stats = Some((read_count, 0));
+
+                self.page_stats.0 += read_count;
                 
                 self.txn = Some(self.client.create_transaction_at_version(
                     self.dp.as_ref(),
@@ -718,22 +718,15 @@ impl Connection {
         };
 
         if lock == LockKind::None {
-            // All locks dropped - preserve commit stats or capture read-only stats
+            // All locks dropped - accumulate read-only transaction stats
             if let Some(ref txn) = self.txn {
                 let read_count = txn.read_set_size();
                 let write_count = txn.written_pages().len() + self.write_buffer.len();
                 
-                // Check if this transaction did any meaningful work
-                let has_work = read_count > 0 || write_count > 0;
-                
-                if self.last_transaction_stats.is_some() && has_work && write_count == 0 {
-                    // We have previous commit stats AND this is a read-only transaction with reads
-                    self.last_transaction_stats = Some((read_count, 0));
-                } else if self.last_transaction_stats.is_none() && has_work {
-                    // No previous stats AND this transaction did work - capture it
-                    self.last_transaction_stats = Some((read_count, write_count));
+                // Only accumulate if this transaction did work and wasn't already counted in commit
+                if read_count > 0 && write_count == 0 {
+                    self.page_stats.0 += read_count;
                 }
-                // Otherwise: preserve existing commit stats (common case after INSERT/UPDATE/DELETE)
             }
             self.txn = None;
             self.history.prev_index = 0;
@@ -755,10 +748,13 @@ impl Connection {
         self.lock
     }
 
-    /// Get page read/write statistics from the last completed transaction.
-    /// Returns Some((pages_read, pages_written)) if stats are available,
-    /// or None if no transaction has completed yet.
-    pub fn page_stats(&self) -> Option<(usize, usize)> {
-        self.last_transaction_stats
+    /// Get accumulated page read/write statistics.
+    pub fn page_stats(&self) -> (usize, usize) {
+        self.page_stats
+    }
+
+    /// Clear accumulated page statistics, resetting counters to (0, 0).
+    pub fn clear_page_stats(&mut self) {
+        self.page_stats = (0, 0);
     }
 }

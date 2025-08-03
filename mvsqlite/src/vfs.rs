@@ -139,11 +139,12 @@ impl DatabaseHandle for Connection {
 }
 
 impl Connection {
-    /// Get page read/write statistics from the current transaction.
-    /// Returns Some((pages_read, pages_written)) if a transaction is active,
-    /// or None if no transaction is currently active.
-    pub fn page_stats(&self) -> Option<(usize, usize)> {
+    pub fn page_stats(&self) -> (usize, usize) {
         self.inner.page_stats()
+    }
+
+    pub fn clear_page_stats(&mut self) {
+        self.inner.clear_page_stats()
     }
 }
 

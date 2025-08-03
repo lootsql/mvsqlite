@@ -403,25 +403,19 @@ pub unsafe extern "C" fn mvsqlite_autocommit_backoff(db: *mut sqlite_c::sqlite3)
     });
 }
 
-/// Get page read/write statistics from the last completed transaction.
+/// Get accumulated page read/write statistics.
 /// 
-/// This function provides access to page I/O statistics for the most recently 
-/// completed transaction on the specified database connection.
+/// This function provides access to cumulative page I/O statistics for all transactions
+/// against the connection since the last call to `clear_page_stats_from_handle`.
 /// 
 /// Notes:
 /// - Read tracking is automatically enabled for mvsqlite transactions
 /// - Write counting includes both flushed and pending pages
-/// - Stats are captured when each transaction ends (both reads and writes)
-/// - SELECTs return (pages_read, 0) while INSERTs/UPDATEs return (pages_read, pages_written)
-/// - Stats persist until the next transaction completes
-/// 
-/// # Arguments
-/// * `db` - Raw SQLite database handle (from rusqlite's Connection::handle())
-/// * `db_name` - Database name (typically "main" for the primary database)
+/// - Stats accumulate across multiple SQL operations
+/// - Call `clear_page_stats_from_handle` to reset counters to (0, 0)
 /// 
 /// # Returns
-/// `Ok((pages_read, pages_written))` if stats from a completed transaction are available,
-/// or `Err(msg)` if no transaction has completed yet.
+/// * `(pages_read, pages_written)` - Accumulated page I/O statistics
 /// 
 /// # Safety
 /// This function is unsafe because it requires a valid SQLite database handle.
@@ -446,10 +440,23 @@ pub unsafe extern "C" fn mvsqlite_autocommit_backoff(db: *mut sqlite_c::sqlite3)
 pub unsafe fn get_page_stats_from_handle(
     db: *mut std::os::raw::c_void, 
     db_name: &str
-) -> Result<(usize, usize), &'static str> {
+) -> (usize, usize) {
     let db = db as *mut sqlite_c::sqlite3;
     let conn_guard = get_conn(db, db_name);
     conn_guard.page_stats()
-        .ok_or("No completed transaction - page statistics not available yet")
+}
+
+/// Clear accumulated page statistics, resetting counters to (0, 0).
+/// 
+/// # Safety
+/// This function is unsafe because it directly accesses the SQLite database handle.
+/// The caller must ensure the same conditions as `get_page_stats_from_handle`.
+pub unsafe fn clear_page_stats_from_handle(
+    db: *mut std::os::raw::c_void, 
+    db_name: &str
+) {
+    let db = db as *mut sqlite_c::sqlite3;
+    let mut conn_guard = get_conn(db, db_name);
+    conn_guard.clear_page_stats()
 }
 
