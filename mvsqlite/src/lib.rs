@@ -420,23 +420,6 @@ pub unsafe extern "C" fn mvsqlite_autocommit_backoff(db: *mut sqlite_c::sqlite3)
 /// # Safety
 /// This function is unsafe because it requires a valid SQLite database handle.
 /// The caller must ensure the handle is valid and the database name exists.
-/// 
-/// # Example
-/// ```rust
-/// use mvsqlite;
-/// 
-/// let conn = rusqlite::Connection::open("test.db")?;
-/// conn.execute("INSERT INTO users (name) VALUES (?)", ["Alice"])?;
-/// 
-/// let (reads, writes) = unsafe {
-
-///     mvsqlite::get_page_stats_from_handle(
-///         conn.handle() as *mut std::os::raw::c_void, 
-///         "main"
-///     ).expect("No completed transaction - stats not available yet")
-/// };
-/// println!("Read {} pages, wrote {} pages", reads, writes);
-/// ```
 pub unsafe fn get_page_stats_from_handle(
     db: *mut std::os::raw::c_void, 
     db_name: &str
