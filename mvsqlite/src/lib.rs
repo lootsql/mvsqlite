@@ -402,3 +402,54 @@ pub unsafe extern "C" fn mvsqlite_autocommit_backoff(db: *mut sqlite_c::sqlite3)
         tokio::time::sleep(Duration::from_millis(100)).await;
     });
 }
+
+/// Get page read/write statistics from the last completed transaction.
+/// 
+/// This function provides access to page I/O statistics for the most recently 
+/// completed transaction on the specified database connection.
+/// 
+/// Notes:
+/// - Read tracking is automatically enabled for mvsqlite transactions
+/// - Write counting includes both flushed and pending pages
+/// - Stats are captured when each transaction ends (both reads and writes)
+/// - SELECTs return (pages_read, 0) while INSERTs/UPDATEs return (pages_read, pages_written)
+/// - Stats persist until the next transaction completes
+/// 
+/// # Arguments
+/// * `db` - Raw SQLite database handle (from rusqlite's Connection::handle())
+/// * `db_name` - Database name (typically "main" for the primary database)
+/// 
+/// # Returns
+/// `Ok((pages_read, pages_written))` if stats from a completed transaction are available,
+/// or `Err(msg)` if no transaction has completed yet.
+/// 
+/// # Safety
+/// This function is unsafe because it requires a valid SQLite database handle.
+/// The caller must ensure the handle is valid and the database name exists.
+/// 
+/// # Example
+/// ```rust
+/// use mvsqlite;
+/// 
+/// let conn = rusqlite::Connection::open("test.db")?;
+/// conn.execute("INSERT INTO users (name) VALUES (?)", ["Alice"])?;
+/// 
+/// let (reads, writes) = unsafe {
+
+///     mvsqlite::get_page_stats_from_handle(
+///         conn.handle() as *mut std::os::raw::c_void, 
+///         "main"
+///     ).expect("No completed transaction - stats not available yet")
+/// };
+/// println!("Read {} pages, wrote {} pages", reads, writes);
+/// ```
+pub unsafe fn get_page_stats_from_handle(
+    db: *mut std::os::raw::c_void, 
+    db_name: &str
+) -> Result<(usize, usize), &'static str> {
+    let db = db as *mut sqlite_c::sqlite3;
+    let conn_guard = get_conn(db, db_name);
+    conn_guard.page_stats()
+        .ok_or("No completed transaction - page statistics not available yet")
+}
+

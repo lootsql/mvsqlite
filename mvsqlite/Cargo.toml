@@ -33,6 +33,7 @@ mvfs = { path = "../mvfs", version = "0.3.0" }
 default = ["loadext", "syscall", "rustls-tls", "global-init"]
 loadext = []
 syscall = []
+sqlite_test = []
 default-tls = ["reqwest/default-tls"]
 rustls-tls = ["reqwest/rustls-tls"]
 global-init = ["tracing-subscriber"]
